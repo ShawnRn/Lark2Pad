@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
+    <channel>
+        <title>Lark2Pad</title>
+        <item>
+            <title>3.3.2</title>
+            <pubDate>Wed, 03 Jun 2026 17:22:10 +0800</pubDate>
+            <sparkle:version>2026060201</sparkle:version>
+            <sparkle:shortVersionString>3.3.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.3.2/Lark2Pad_3.3.2_arm64.dmg" length="2947026" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="arm64" sparkle:edSignature="8R+LPb337SqDWvSEieVJC0D8nso4/JcG7vqvvglYyA0xvgi3d3JaiCjgvV0sACaBfcTTsZBsVKfYYMIW756vCg=="/>
+            <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.3.2/Lark2Pad_3.3.2_x86_64.dmg" length="2975620" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="x86_64" sparkle:edSignature="t/ei67iwAf310EPNm0OViSVBGnZly08F3xesNEmm6BvZoKpcIyC7QPBGXLrsaMWUznXokR3aUT0Ev0fwEoIBBA=="/>
+        </item>
+    </channel>
+</rss>
