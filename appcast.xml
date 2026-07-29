@@ -3,22 +3,31 @@
     <channel>
         <title>Lark2Pad</title>
         <item>
-            <title>3.4.0</title>
-            <pubDate>Wed, 29 Jul 2026 15:34:06 +0800</pubDate>
-            <sparkle:version>2026072901</sparkle:version>
-            <sparkle:shortVersionString>3.4.0</sparkle:shortVersionString>
+            <title>3.4.5</title>
+            <pubDate>Wed, 29 Jul 2026 16:10:49 +0800</pubDate>
+            <sparkle:version>2026072902</sparkle:version>
+            <sparkle:shortVersionString>3.4.5</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-            <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.4.0/Lark2Pad_3.4.0_arm64.dmg" length="1322058" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="arm64" sparkle:edSignature="qfEhOaduXAdQbvBBiSTXDyMVq7Q8jalNFna2hsy0rFz+elM3+H7zjJlw9pyz6luSKsx3YCYPjnOm9QGa4RXJCg=="/>
-            <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.4.0/Lark2Pad_3.4.0_x86_64.dmg" length="1355691" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="x86_64" sparkle:edSignature="rFKr5/Hwc41PtLXoHH8ejzS6mh8t58o0e6L+InEq7JQtN4sQDAsjucCuLbpRYPUaJjnMGgbZIgx01J2SW3GBBQ=="/>
+            <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.4.5/Lark2Pad_3.4.5_arm64.dmg" length="1326234" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="arm64" sparkle:edSignature="H5LRIygHabzfMWm7Hu972XD4d2vSx4prG5s5a4Giys3zWkdInOOAONfKQUPhkY/nh3I1QEOliVJxH57kwxRVAA=="/>
+            <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.4.5/Lark2Pad_3.4.5_x86_64.dmg" length="1360949" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="x86_64" sparkle:edSignature="rOdYBoHI3oCwc8DzpZdXvqiUEqnBVBqloqd+EH1zECKufBQ21QQ4O7cAIhvwM8RmUOfhtfUQIRiXsOYja4/cBg=="/>
         </item>
         <item>
-                            <title>3.3.2</title>
-                            <pubDate>Wed, 03 Jun 2026 17:22:10 +0800</pubDate>
-                            <sparkle:version>2026060201</sparkle:version>
-                            <sparkle:shortVersionString>3.3.2</sparkle:shortVersionString>
-                            <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
-                            <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.3.2/Lark2Pad_3.3.2_arm64.dmg" length="2947026" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="arm64" sparkle:edSignature="8R+LPb337SqDWvSEieVJC0D8nso4/JcG7vqvvglYyA0xvgi3d3JaiCjgvV0sACaBfcTTsZBsVKfYYMIW756vCg=="/>
-                            <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.3.2/Lark2Pad_3.3.2_x86_64.dmg" length="2975620" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="x86_64" sparkle:edSignature="t/ei67iwAf310EPNm0OViSVBGnZly08F3xesNEmm6BvZoKpcIyC7QPBGXLrsaMWUznXokR3aUT0Ev0fwEoIBBA=="/>
-                        </item>
+                    <title>3.4.0</title>
+                    <pubDate>Wed, 29 Jul 2026 15:34:06 +0800</pubDate>
+                    <sparkle:version>2026072901</sparkle:version>
+                    <sparkle:shortVersionString>3.4.0</sparkle:shortVersionString>
+                    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+                    <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.4.0/Lark2Pad_3.4.0_arm64.dmg" length="1322058" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="arm64" sparkle:edSignature="qfEhOaduXAdQbvBBiSTXDyMVq7Q8jalNFna2hsy0rFz+elM3+H7zjJlw9pyz6luSKsx3YCYPjnOm9QGa4RXJCg=="/>
+                    <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.4.0/Lark2Pad_3.4.0_x86_64.dmg" length="1355691" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="x86_64" sparkle:edSignature="rFKr5/Hwc41PtLXoHH8ejzS6mh8t58o0e6L+InEq7JQtN4sQDAsjucCuLbpRYPUaJjnMGgbZIgx01J2SW3GBBQ=="/>
+                </item>
+        <item>
+                                    <title>3.3.2</title>
+                                    <pubDate>Wed, 03 Jun 2026 17:22:10 +0800</pubDate>
+                                    <sparkle:version>2026060201</sparkle:version>
+                                    <sparkle:shortVersionString>3.3.2</sparkle:shortVersionString>
+                                    <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>
+                                    <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.3.2/Lark2Pad_3.3.2_arm64.dmg" length="2947026" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="arm64" sparkle:edSignature="8R+LPb337SqDWvSEieVJC0D8nso4/JcG7vqvvglYyA0xvgi3d3JaiCjgvV0sACaBfcTTsZBsVKfYYMIW756vCg=="/>
+                                    <enclosure url="https://github.com/ShawnRn/Lark2Pad/releases/download/v3.3.2/Lark2Pad_3.3.2_x86_64.dmg" length="2975620" type="application/octet-stream" sparkle:os="macos" sparkle:nativeArchitecture="x86_64" sparkle:edSignature="t/ei67iwAf310EPNm0OViSVBGnZly08F3xesNEmm6BvZoKpcIyC7QPBGXLrsaMWUznXokR3aUT0Ev0fwEoIBBA=="/>
+                                </item>
     </channel>
 </rss>
