@@ -10,7 +10,7 @@ final class CookieManager {
     
     private init() {
         self.cachedCookies = loadFromDisk()
-        print("[CookieManager] 初始化，从磁盘加载了 \(cachedCookies.count) 条 Cookie")
+        fputs("[CookieManager] 初始化，从磁盘加载了 \(cachedCookies.count) 条 Cookie\n", stderr)
     }
     
     /// 从 WebView 数据存储中提取特定域名的 Cookie
@@ -38,6 +38,42 @@ final class CookieManager {
         let hasPrimaryCookie = targetCookies.contains { $0.name == SecureRuntimeConfig.etherpadTokenCookieName }
         let hasSessionCookie = targetCookies.contains { $0.name == SecureRuntimeConfig.etherpadSessionCookieName }
         print("[CookieManager] 会话状态: primary=\(hasPrimaryCookie), session=\(hasSessionCookie)")
+    }
+    
+    /// 手动导入解析过的 Cookie 字符串
+    @discardableResult
+    func importRawCookieString(_ cookieString: String) -> Bool {
+        let pairs = cookieString.components(separatedBy: ";")
+        var newCookies: [HTTPCookie] = []
+        let domain = SecureRuntimeConfig.ifanrDomain
+        
+        for pair in pairs {
+            let parts = pair.components(separatedBy: "=")
+            guard parts.count >= 1 else { continue }
+            let name = parts[0].trimmingCharacters(in: .whitespacesAndNewlines)
+            let value = parts.dropFirst().joined(separator: "=").trimmingCharacters(in: .whitespacesAndNewlines)
+            
+            guard !name.isEmpty else { continue }
+            
+            let properties: [HTTPCookiePropertyKey: Any] = [
+                .name: name,
+                .value: value,
+                .domain: "." + domain,
+                .path: "/"
+            ]
+            
+            if let cookie = HTTPCookie(properties: properties) {
+                newCookies.append(cookie)
+            }
+        }
+        
+        if !newCookies.isEmpty {
+            self.cachedCookies = newCookies
+            saveToDisk(cookies: newCookies)
+            print("[CookieManager] 手动导入了 \(newCookies.count) 条 Cookie")
+            return true
+        }
+        return false
     }
     
     /// 获取完整的 Cookie 字符串用于 HTTP Header

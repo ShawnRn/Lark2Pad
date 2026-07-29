@@ -55,6 +55,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
 struct Lark2PadApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @AppStorage("app_appearance") private var appearance: AppAppearance = .system
+    @StateObject private var updaterController = UpdaterController()
 
     var body: some Scene {
         Window("Lark2Pad", id: "main") {
@@ -78,6 +79,10 @@ struct Lark2PadApp: App {
             CommandGroup(replacing: .appInfo) {
                 Button("关于 Lark2Pad") {
                     NSApp.orderFrontStandardAboutPanel(nil)
+                }
+                
+                Button("检查更新...") {
+                    updaterController.checkForUpdates()
                 }
             }
         }

@@ -1,9 +1,8 @@
 //
 //  Lark2PadFunctionView.swift
-//  LiquidConvert
+//  Lark2Pad
 //
-//  Main SwiftUI view for Lark2Pad integration in LiquidConvert.
-//  Adapted for Liquid Glass design language.
+//  Main SwiftUI view for Lark2Pad standalone app.
 //
 
 import AppKit
@@ -18,6 +17,11 @@ struct Lark2PadFunctionView: View {
     @State private var showLoginSheet = false
     @State private var isSyncingToPad = false
     @AppStorage("lark2pad_auto_upload") private var autoUploadImages = true
+    @AppStorage("lark2pad_round_images") private var roundImages = true
+    @AppStorage("lark2pad_add_header_banner") private var addHeaderBanner = true
+    @AppStorage("lark2pad_add_footer_banner") private var addFooterBanner = true
+    @State private var showSettingsSheet = false
+    @State private var isCopyingWeChat = false
     @Environment(\.colorScheme) private var colorScheme
     
     // Animation Namespace
@@ -53,15 +57,26 @@ struct Lark2PadFunctionView: View {
 
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.clear)
+        .background(Color(nsColor: .windowBackgroundColor))
         .contentShape(Rectangle())
         .task {
             await coordinator.prepareEngine()
+        }
+        .sheet(isPresented: $showSettingsSheet) {
+            ConversionSettingsSheet(
+                autoUploadImages: $autoUploadImages,
+                roundImages: $roundImages,
+                addHeaderBanner: $addHeaderBanner,
+                addFooterBanner: $addFooterBanner
+            )
         }
         .sheet(isPresented: $showLoginSheet, onDismiss: {
             coordinator.checkLoginStatus()
         }) {
             Lark2PadLoginView(coordinator: coordinator)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSNotification.Name("Lark2PadLoginSuccess"))) { _ in
+            showLoginSheet = false
         }
         .alert(
             "检测到超限图片",
@@ -149,20 +164,27 @@ struct Lark2PadFunctionView: View {
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                 
-                Toggle("自动上传图片到私有图床", isOn: $autoUploadImages)
-                    .toggleStyle(.checkbox)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.top, 4)
-                
-                Button(action: { showLoginSheet = true }) {
-                    Label(coordinator.isLoggedIntoEtherpad ? "已登录 Pad 账号" : "登录 Pad 账号", 
-                          systemImage: coordinator.isLoggedIntoEtherpad ? "person.badge.shield.checkmark.fill" : "person.badge.key.fill")
+                HStack(spacing: 12) {
+                    Button(action: { showLoginSheet = true }) {
+                        Label(coordinator.isLoggedIntoEtherpad ? "已登录公司账号" : "登录公司账号同步 Session", 
+                              systemImage: coordinator.isLoggedIntoEtherpad ? "person.badge.shield.checkmark.fill" : "person.badge.key.fill")
+                            .font(.caption)
+                            .foregroundStyle(coordinator.isLoggedIntoEtherpad ? .green : .blue)
+                    }
+                    .buttonStyle(.plain)
+
+                    Text("•")
                         .font(.caption)
-                        .foregroundStyle(coordinator.isLoggedIntoEtherpad ? .green : .blue)
+                        .foregroundStyle(.tertiary)
+
+                    Button(action: { showSettingsSheet = true }) {
+                        Label("排版与转换设置", systemImage: "slider.horizontal.3")
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
+                .padding(.top, 4)
             }
         }
     }
@@ -302,7 +324,7 @@ struct Lark2PadFunctionView: View {
         }
         .animation(.easeInOut(duration: 0.3), value: coordinator.phase)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.clear)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     private func statusLabel(_ text: String) -> some View {
@@ -408,16 +430,52 @@ struct Lark2PadFunctionView: View {
             .buttonStyle(.bordered)
             .controlSize(.large)
 
-            Button(action: { showExporter = true }) {
-                Label("保存 Etherpad HTML", systemImage: "arrow.down.doc.fill")
+            Button(action: copyEtherpad) {
+                Label("复制 Etherpad", systemImage: "doc.on.clipboard")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .tint(.blue)
             .controlSize(.large)
 
-            Button(action: syncToPad) {
-                Label(isSyncingToPad ? "同步中" : "同步到 Pad", systemImage: isSyncingToPad ? "arrow.triangle.2.circlepath" : "icloud.and.arrow.up")
+            Button(action: copyToWeChat) {
+                HStack(spacing: 6) {
+                    if isCopyingWeChat {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("公众号排版生成中...")
+                    } else {
+                        Label("复制到公众号", systemImage: "paperplane.fill")
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.green)
+            .controlSize(.large)
+            .disabled(isCopyingWeChat || coordinator.markdownResult.isEmpty || coordinator.previewHTML.isEmpty)
+
+            Button(action: { showExporter = true }) {
+                Label("保存 HTML", systemImage: "arrow.down.doc")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.large)
+
+            Menu {
+                Button(action: syncToPad) {
+                    Label("仅同步到 Pad", systemImage: "icloud.and.arrow.up")
+                }
+                Divider()
+                Section("一键转存至公众号草稿箱 (Pad send2cms)") {
+                    ForEach(EtherpadSyncService.availableCMSChannels) { channel in
+                        Button(action: { syncAndSend2CMS(channel: channel.id) }) {
+                            Label("发送至 \(channel.name)", systemImage: "paperplane")
+                        }
+                    }
+                }
+            } label: {
+                Label(isSyncingToPad ? "处理中..." : "同步 / 发布至公众号", systemImage: isSyncingToPad ? "arrow.triangle.2.circlepath" : "icloud.and.arrow.up")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
@@ -455,7 +513,7 @@ struct Lark2PadFunctionView: View {
             .controlSize(.large)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.clear)
+        .background(Color(nsColor: .windowBackgroundColor))
     }
 
     // MARK: - Footer
@@ -533,9 +591,45 @@ struct Lark2PadFunctionView: View {
         showToast("Markdown 内容已复制！")
     }
 
+    private func copyEtherpad() {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(coordinator.etherpadHTML, forType: .html)
+        pb.setString(coordinator.etherpadHTML, forType: .string)
+        showToast("Etherpad 格式已复制！")
+    }
+
+    private func copyToWeChat() {
+        guard !isCopyingWeChat else { return }
+        isCopyingWeChat = true
+
+        let markdown = coordinator.markdownResult
+        let roundImgs = roundImages
+        let addHeader = addHeaderBanner
+        let addFooter = addFooterBanner
+
+        Task {
+            let wechatHTML = await EtherpadExporter.buildWeChatHTMLAsync(
+                from: markdown,
+                roundImages: roundImgs,
+                addHeaderBanner: addHeader,
+                addFooterBanner: addFooter
+            )
+
+            await MainActor.run {
+                let pb = NSPasteboard.general
+                pb.clearContents()
+                pb.setString(wechatHTML, forType: .html)
+                pb.setString(markdown, forType: .string)
+                isCopyingWeChat = false
+                showToast("已复制公众号排版！如提示图片载入失败，可直接使用右侧【同步 / 发布至公众号】。")
+            }
+        }
+    }
+
     private func syncToPad() {
         guard coordinator.isLoggedIntoEtherpad else {
-            showToast("请先登录 Pad 账号", isError: true)
+            showToast("请先登录公司 Etherpad 账号", isError: true)
             return
         }
 
@@ -556,6 +650,34 @@ struct Lark2PadFunctionView: View {
                 await MainActor.run {
                     isSyncingToPad = false
                     showToast("同步失败: \(error.localizedDescription)", isError: true)
+                }
+            }
+        }
+    }
+
+    private func syncAndSend2CMS(channel: String) {
+        guard coordinator.isLoggedIntoEtherpad else {
+            showToast("请先登录公司 Etherpad 账号", isError: true)
+            return
+        }
+
+        isSyncingToPad = true
+        let markdown = coordinator.markdownResult
+        let html = coordinator.etherpadHTML
+
+        Task {
+            do {
+                let result = try await EtherpadSyncService.sync(markdown: markdown, html: html)
+                _ = try await EtherpadSyncService.sendToCMS(padID: result.padID, channel: channel)
+                await MainActor.run {
+                    isSyncingToPad = false
+                    showToast("已成功同步并发布至公众号草稿箱（\(channel)）！")
+                    NSWorkspace.shared.open(result.url)
+                }
+            } catch {
+                await MainActor.run {
+                    isSyncingToPad = false
+                    showToast("发布失败: \(error.localizedDescription)", isError: true)
                 }
             }
         }
