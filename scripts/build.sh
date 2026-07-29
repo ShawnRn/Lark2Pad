@@ -11,7 +11,7 @@ cd "$ROOT"
 
 PROJECT_NAME="Lark2Pad"
 SCHEME="Lark2Pad"
-APP_NAME="Lark2Pad.app"
+APP_NAME="爱范儿排版工具.app"
 ARCHIVE_PATH="$ROOT/.build/archive/${PROJECT_NAME}.xcarchive"
 APP_BUNDLE="$ROOT/${APP_NAME}"
 SKIP_DMG="${SKIP_DMG:-0}"
@@ -20,7 +20,7 @@ create_dmg_with_layout() {
     local app_bundle="$1"
     local dmg_path="$2"
     local target_arch="$3"
-    local display_app_name="${PROJECT_NAME}.app"
+    local display_app_name="爱范儿排版工具.app"
     local dmg_dir
     dmg_dir=$(dirname "$dmg_path")
     local styled_dmg_path="${dmg_dir}/${PROJECT_NAME} ${MARKETING_VERSION}.dmg"
