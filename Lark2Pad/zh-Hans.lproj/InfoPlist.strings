@@ -3,6 +3,6 @@
   LiquidConvert - 简体中文本地化
 */
 
-CFBundleName = "LiquidConvert";
-CFBundleDisplayName = "LiquidConvert";
-NSHumanReadableCopyright = "Copyright © 2025 Shawn Rain.";
+CFBundleName = "爱范儿排版工具";
+CFBundleDisplayName = "爱范儿排版工具";
+NSHumanReadableCopyright = "Copyright © 2026 Shawn Rain.";

@@ -58,7 +58,7 @@ struct Lark2PadApp: App {
     @StateObject private var updaterController = UpdaterController()
 
     var body: some Scene {
-        Window("Lark2Pad", id: "main") {
+        Window("爱范儿排版工具", id: "main") {
             Lark2PadFunctionView()
                 .frame(minWidth: 800, minHeight: 650)
                 .background(
@@ -77,7 +77,7 @@ struct Lark2PadApp: App {
         .commands {
             // Keep it clean and replace standard app info
             CommandGroup(replacing: .appInfo) {
-                Button("关于 Lark2Pad") {
+                Button("关于 爱范儿排版工具") {
                     NSApp.orderFrontStandardAboutPanel(nil)
                 }
                 

@@ -295,7 +295,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Lark2Pad/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Lark2Pad;
+				INFOPLIST_KEY_CFBundleDisplayName = "爱范儿排版工具";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -329,7 +329,7 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = NO;
 				INFOPLIST_FILE = Lark2Pad/Info.plist;
-				INFOPLIST_KEY_CFBundleDisplayName = Lark2Pad;
+				INFOPLIST_KEY_CFBundleDisplayName = "爱范儿排版工具";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
 				LD_RUNPATH_SEARCH_PATHS = (
