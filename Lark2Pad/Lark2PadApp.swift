@@ -37,6 +37,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDele
         Task {
             await AutoZaobaoFixer.fixIfNeeded()
         }
+        // Global shortcut listener for ⌘Q exit guarantee
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers?.lowercased() == "q" {
+                NSApp.terminate(nil)
+                return nil
+            }
+            return event
+        }
     }
 
     func userNotificationCenter(
@@ -84,6 +92,13 @@ struct Lark2PadApp: App {
                 Button("检查更新...") {
                     updaterController.checkForUpdates()
                 }
+            }
+            
+            CommandGroup(replacing: .appTermination) {
+                Button("退出 爱范儿排版工具") {
+                    NSApp.terminate(nil)
+                }
+                .keyboardShortcut("q", modifiers: .command)
             }
         }
     }
