@@ -99,7 +99,7 @@ enum EtherpadSyncService {
                 let cleaned = cleanTitleLine(line)
                 return cleaned.isEmpty ? nil : cleaned
             }
-            .first ?? "Lark2Pad_文档"
+            .first ?? "LiquidConvert_文档"
 
         return sanitizePadID(firstMeaningfulLine)
     }
@@ -120,7 +120,7 @@ enum EtherpadSyncService {
             .trimmingCharacters(in: CharacterSet(charactersIn: "._- "))
 
         if result.isEmpty {
-            result = "Lark2Pad_文档"
+            result = "LiquidConvert_文档"
         }
 
         return String(result.prefix(80))

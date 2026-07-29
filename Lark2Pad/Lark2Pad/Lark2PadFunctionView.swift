@@ -1,8 +1,9 @@
 //
 //  Lark2PadFunctionView.swift
-//  Lark2Pad
+//  LiquidConvert
 //
-//  Main SwiftUI view for Lark2Pad standalone app.
+//  Main SwiftUI view for Lark2Pad integration in LiquidConvert.
+//  Adapted for Liquid Glass design language.
 //
 
 import AppKit
