@@ -17,6 +17,219 @@ enum EtherpadExporter {
         return wrapInHTMLDocument(body: bodyContent)
     }
 
+    /// Build HTML document formatted specifically for WordPress / CMS editor pasting.
+    static func buildWordPressHTML(from markdown: String) -> String {
+        let lines = normalizeMarkdownSpacing(markdown)
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "\r", with: "\n")
+            .components(separatedBy: "\n")
+
+        // Pre-scan for slider blocks (bidirectional image collection)
+        var sliderBlocks: [Int: SliderBlock] = [:]
+        var processedIndices = Set<Int>()
+
+        for i in 0..<lines.count {
+            if processedIndices.contains(i) { continue }
+            let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
+            let stripped = trimmed
+                .replacingOccurrences(of: "*", with: "")
+                .replacingOccurrences(of: ">", with: "")
+                .replacingOccurrences(of: "#", with: "")
+                .trimmingCharacters(in: .whitespaces)
+
+            let isHoriz = stripped.contains("左右滑动")
+            let isVert = stripped.contains("上下滑动")
+
+            if isHoriz || isVert {
+                var startIdx = i
+                var endIdx = i
+                var urls: [String] = []
+
+                // Look backwards
+                var prevIdx = i - 1
+                var backURLs: [String] = []
+                while prevIdx >= 0 {
+                    let candidateTrimmed = lines[prevIdx].trimmingCharacters(in: .whitespaces)
+                    if candidateTrimmed.isEmpty {
+                        prevIdx -= 1
+                        continue
+                    }
+                    let lineURLs = extractImageURLs(from: lines[prevIdx])
+                    if !lineURLs.isEmpty {
+                        backURLs.insert(contentsOf: lineURLs, at: 0)
+                        startIdx = prevIdx
+                        prevIdx -= 1
+                    } else {
+                        break
+                    }
+                }
+                urls.append(contentsOf: backURLs)
+
+                // Look forwards
+                var nextIdx = i + 1
+                while nextIdx < lines.count {
+                    let candidateTrimmed = lines[nextIdx].trimmingCharacters(in: .whitespaces)
+                    if candidateTrimmed.isEmpty {
+                        nextIdx += 1
+                        continue
+                    }
+                    let lineURLs = extractImageURLs(from: lines[nextIdx])
+                    if !lineURLs.isEmpty {
+                        urls.append(contentsOf: lineURLs)
+                        endIdx = nextIdx
+                        nextIdx += 1
+                    } else {
+                        break
+                    }
+                }
+
+                if !urls.isEmpty {
+                    let kind: SliderBlock.Kind = isHoriz ? .horizontal : .vertical
+                    sliderBlocks[startIdx] = SliderBlock(endIndex: endIdx, kind: kind, urls: urls)
+                    for k in startIdx...endIdx {
+                        processedIndices.insert(k)
+                    }
+                }
+            }
+        }
+
+        var result = ""
+        var inList = false
+        var index = 0
+
+        while index < lines.count {
+            if let block = sliderBlocks[index] {
+                if inList { result += "</ul>\n\n"; inList = false }
+                switch block.kind {
+                case .horizontal:
+                    result += buildWordPressHorizontalSliderHTML(imageURLs: block.urls) + "\n\n"
+                case .vertical:
+                    result += buildWordPressVerticalSliderHTML(imageURLs: block.urls) + "\n\n"
+                }
+                index = block.endIndex + 1
+                continue
+            }
+
+            let line = lines[index]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+
+            if trimmed.isEmpty {
+                if inList { result += "</ul>\n\n"; inList = false }
+                index += 1
+                continue
+            }
+
+            // Callout / Highlight Blocks (<section data-type="callout"> or <callout>)
+            let lowerTrimmed = trimmed.lowercased()
+            if lowerTrimmed.hasPrefix("<section data-type=\"callout\"") || lowerTrimmed.hasPrefix("<callout") {
+                if inList { result += "</ul>\n\n"; inList = false }
+                var calloutLines: [String] = []
+                let endTag = lowerTrimmed.hasPrefix("<callout") ? "</callout>" : "</section>"
+                var subIdx = index
+
+                while subIdx < lines.count {
+                    let currentLine = lines[subIdx]
+                    let currentLower = currentLine.trimmingCharacters(in: .whitespaces).lowercased()
+
+                    let cleaned = currentLine
+                        .replacingOccurrences(of: "<section data-type=\"callout\">", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "</section>", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "<callout>", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "</callout>", with: "", options: .caseInsensitive)
+                        .trimmingCharacters(in: .whitespaces)
+
+                    if !cleaned.isEmpty {
+                        calloutLines.append(cleaned)
+                    }
+
+                    if currentLower.contains(endTag) {
+                        subIdx += 1
+                        break
+                    }
+                    subIdx += 1
+                }
+
+                if !calloutLines.isEmpty {
+                    result += buildWordPressCalloutCardHTML(lines: calloutLines) + "\n\n"
+                    index = subIdx
+                    continue
+                }
+            }
+
+            // Headers (h3 default for WordPress sections)
+            if let (_, level, content) = parseHeaderWithLevel(trimmed) {
+                if inList { result += "</ul>\n\n"; inList = false }
+                let parsedContent = parseInline(content)
+                result += "<h\(level)>\(parsedContent)</h\(level)>\n\n"
+                index += 1
+                continue
+            }
+
+            // Lists
+            if trimmed.hasPrefix("- ") || trimmed.hasPrefix("* ") {
+                if !inList { result += "<ul>\n"; inList = true }
+                let content = parseInline(String(trimmed.dropFirst(2)))
+                result += " \t<li>\(content)</li>\n"
+                index += 1
+                continue
+            } else if inList {
+                result += "</ul>\n\n"
+                inList = false
+            }
+
+            // Captions (WordPress editor-image-source style)
+            if isCaptionText(trimmed) {
+                let caption = normalizeCaptionText(trimmed)
+                result += "<div class=\"editor-image-source\">\n\n\(caption)\n\n</div>\n\n"
+                index += 1
+                continue
+            }
+
+            // Standalone Images
+            if let (alt, url) = parseStandaloneImageData(trimmed) {
+                result += "<p><img src=\"\(htmlEscaped(url))\" alt=\"\(htmlEscaped(alt))\" /></p>\n\n"
+                index += 1
+                continue
+            }
+
+            // Blockquotes (WordPress <blockquote>)
+            if trimmed.hasPrefix("> ") {
+                let content = parseInline(String(trimmed.dropFirst(2)))
+                result += "<blockquote>\(content)</blockquote>\n\n"
+                index += 1
+                continue
+            }
+
+            // HTML raw line
+            if trimmed.hasPrefix("<") {
+                result += line + "\n\n"
+                index += 1
+                continue
+            }
+
+            // Normal paragraphs
+            let content = parseInline(line)
+            result += "<p>\(content)</p>\n\n"
+            index += 1
+        }
+
+        if inList { result += "</ul>\n" }
+        return result.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private static func parseStandaloneImageData(_ line: String) -> (alt: String, url: String)? {
+        let pattern = "^!\\[([^\\]]*)\\]\\(([^)]+)\\)$"
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []) else { return nil }
+        let nsString = line as NSString
+        let range = NSRange(location: 0, length: nsString.length)
+        guard let match = regex.firstMatch(in: line, options: [], range: range), match.numberOfRanges > 2 else {
+            return nil
+        }
+        let alt = nsString.substring(with: match.range(at: 1))
+        let url = nsString.substring(with: match.range(at: 2))
+        return (alt, url)
+    }
+
     /// Build HTML document with fully inlined CSS styles optimized for pasting into WeChat Official Account editor (Async image base64 guaranteed).
     static func buildWeChatHTMLAsync(
         from markdown: String,
@@ -181,6 +394,7 @@ enum EtherpadExporter {
 
         var result = ""
         var i = 0
+        var lastImageSrc: String? = nil
 
         while i < rawLines.count {
             let line = rawLines[i]
@@ -188,6 +402,15 @@ enum EtherpadExporter {
 
             let imgHTML = sanitizedImageTag(from: line) ?? parseStandaloneImageTag(line)
             if let imgHTML {
+                let currentSrc = firstAttribute("src", in: imgHTML)?.components(separatedBy: "?").first
+                if let currentSrc, currentSrc == lastImageSrc {
+                    i += 1
+                    continue
+                }
+                if let currentSrc {
+                    lastImageSrc = currentSrc
+                }
+
                 result += imgHTML
 
                 // Look ahead for caption, bypassing intermediate empty lines
@@ -218,6 +441,10 @@ enum EtherpadExporter {
                 result += "<span class=\"image-caption\" data-image-caption=\"true\" style=\"\(captionStyle)\">\(htmlEscaped(caption))</span><br>\n"
                 i += 1
                 continue
+            }
+
+            if !trimmed.isEmpty {
+                lastImageSrc = nil
             }
 
             result += htmlEscaped(line) + "<br>\n"
@@ -287,23 +514,153 @@ enum EtherpadExporter {
             .replacingOccurrences(of: "\r", with: "\n")
             .components(separatedBy: "\n")
         
+        // Pre-scan for slider blocks (bidirectional image collection)
+        var sliderBlocks: [Int: SliderBlock] = [:]
+        var processedIndices = Set<Int>()
+
+        for i in 0..<lines.count {
+            if processedIndices.contains(i) { continue }
+            let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
+            let stripped = trimmed
+                .replacingOccurrences(of: "*", with: "")
+                .replacingOccurrences(of: ">", with: "")
+                .replacingOccurrences(of: "#", with: "")
+                .trimmingCharacters(in: .whitespaces)
+
+            let isHoriz = stripped.contains("左右滑动")
+            let isVert = stripped.contains("上下滑动")
+
+            if isHoriz || isVert {
+                var startIdx = i
+                var endIdx = i
+                var urls: [String] = []
+
+                // Look backwards
+                var prevIdx = i - 1
+                var backURLs: [String] = []
+                while prevIdx >= 0 {
+                    let candidateTrimmed = lines[prevIdx].trimmingCharacters(in: .whitespaces)
+                    if candidateTrimmed.isEmpty {
+                        prevIdx -= 1
+                        continue
+                    }
+                    let lineURLs = extractImageURLs(from: lines[prevIdx])
+                    if !lineURLs.isEmpty {
+                        backURLs.insert(contentsOf: lineURLs, at: 0)
+                        startIdx = prevIdx
+                        prevIdx -= 1
+                    } else {
+                        break
+                    }
+                }
+                urls.append(contentsOf: backURLs)
+
+                // Look forwards
+                var nextIdx = i + 1
+                while nextIdx < lines.count {
+                    let candidateTrimmed = lines[nextIdx].trimmingCharacters(in: .whitespaces)
+                    if candidateTrimmed.isEmpty {
+                        nextIdx += 1
+                        continue
+                    }
+                    let lineURLs = extractImageURLs(from: lines[nextIdx])
+                    if !lineURLs.isEmpty {
+                        urls.append(contentsOf: lineURLs)
+                        endIdx = nextIdx
+                        nextIdx += 1
+                    } else {
+                        break
+                    }
+                }
+
+                if !urls.isEmpty {
+                    let kind: SliderBlock.Kind = isHoriz ? .horizontal : .vertical
+                    sliderBlocks[startIdx] = SliderBlock(endIndex: endIdx, kind: kind, urls: urls)
+                    for k in startIdx...endIdx {
+                        processedIndices.insert(k)
+                    }
+                }
+            }
+        }
+
         var result = ""
         var inList = false
-        
-        for line in lines {
+        var index = 0
+
+        while index < lines.count {
+            if let block = sliderBlocks[index] {
+                if inList { result += "</ul>\n"; inList = false }
+                switch block.kind {
+                case .horizontal:
+                    result += buildWeChatHorizontalSliderHTML(imageURLs: block.urls) + "\n"
+                case .vertical:
+                    result += buildWeChatVerticalSliderHTML(imageURLs: block.urls) + "\n"
+                }
+                index = block.endIndex + 1
+                continue
+            }
+
+            let line = lines[index]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             
             // Handle empty lines
             if trimmed.isEmpty {
                 if inList { result += "</ul>\n"; inList = false }
                 result += "<p><br></p>\n"
+                index += 1
                 continue
+            }
+
+            // Callout / Highlight Blocks (<section data-type="callout"> or <callout>)
+            let lowerTrimmed = trimmed.lowercased()
+            if lowerTrimmed.hasPrefix("<section data-type=\"callout\"") || lowerTrimmed.hasPrefix("<callout") {
+                if inList { result += "</ul>\n"; inList = false }
+                var calloutLines: [String] = []
+                let endTag = lowerTrimmed.hasPrefix("<callout") ? "</callout>" : "</section>"
+                var subIdx = index
+                var foundEnd = false
+
+                while subIdx < lines.count {
+                    let currentLine = lines[subIdx]
+                    let currentTrimmed = currentLine.trimmingCharacters(in: .whitespaces)
+                    let currentLower = currentTrimmed.lowercased()
+
+                    let cleaned = currentLine
+                        .replacingOccurrences(of: "<section data-type=\"callout\">", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "</section>", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "<callout>", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "</callout>", with: "", options: .caseInsensitive)
+                        .trimmingCharacters(in: .whitespaces)
+
+                    if !cleaned.isEmpty {
+                        calloutLines.append(cleaned)
+                    }
+
+                    if currentLower.contains(endTag) && subIdx > index {
+                        foundEnd = true
+                        subIdx += 1
+                        break
+                    }
+                    if currentLower.contains(endTag) && subIdx == index && (currentLower.components(separatedBy: endTag).count > 2 || !cleaned.isEmpty) {
+                        foundEnd = true
+                        subIdx += 1
+                        break
+                    }
+                    subIdx += 1
+                }
+
+                if !calloutLines.isEmpty {
+                    result += buildWeChatCalloutCardHTML(lines: calloutLines, imgRadius: "8px") + "\n"
+                    index = subIdx
+                    continue
+                }
             }
 
             // 1. Headers
             if let (tag, content) = parseHeader(trimmed) {
                 if inList { result += "</ul>\n"; inList = false }
                 result += "<\(tag)>\(parseInline(content))</\(tag)>\n"
+                index += 1
                 continue
             }
 
@@ -312,6 +669,7 @@ enum EtherpadExporter {
                 if !inList { result += "<ul>\n"; inList = true }
                 let content = parseInline(String(trimmed.dropFirst(2)))
                 result += "<li>\(content)</li>\n"
+                index += 1
                 continue
             } else if inList {
                 result += "</ul>\n"
@@ -321,6 +679,7 @@ enum EtherpadExporter {
             // 3. HTML tags / Images
             if trimmed.hasPrefix("<") {
                 result += line + "\n"
+                index += 1
                 continue
             }
 
@@ -328,6 +687,7 @@ enum EtherpadExporter {
             if trimmed.hasPrefix("> ") {
                 let content = parseInline(String(trimmed.dropFirst(2)))
                 result += "<blockquote>\(content)</blockquote>\n"
+                index += 1
                 continue
             }
 
@@ -337,11 +697,13 @@ enum EtherpadExporter {
                 let caption = normalizeCaptionText(trimmed)
                 let captionStyle = "display: inline-block; width: 100%; font-family: PingFangSC-Regular; font-weight: 400; font-size: 12px; color: rgb(167, 167, 167); letter-spacing: 0px; text-align: center; margin-top: 0px !important; margin-bottom: 12px; line-height: 1.2;"
                 result += "<div style=\"margin-top: -6px; margin-bottom: 12px;\"><span class=\"image-caption\" style=\"\(captionStyle)\">\(parseInline(caption))</span></div>\n"
+                index += 1
                 continue
             }
 
             // 6. Normal paragraphs
             result += "<p>\(parseInline(line))</p>\n"
+            index += 1
         }
         
         if inList { result += "</ul>\n" }
@@ -381,28 +743,41 @@ enum EtherpadExporter {
         "<section style=\"text-align: left;justify-content: flex-start;display: flex;flex-flow: row;margin: 0px 0px 24px 0px;width: 100%;align-self: flex-start;background-color: rgb(255, 113, 20);border-radius: 10px;overflow: hidden;box-sizing: border-box;\"><section style=\"text-align: center;line-height: 0;width: 100%;box-sizing: border-box;\"><section style=\"max-width: 100%;vertical-align: middle;display: inline-block;line-height: 0;box-sizing: border-box;\" nodeleaf=\"\"><img src=\"\(defaultHeaderBannerURL)\" class=\"rich_pages wxw-img\" data-ratio=\"0.5333333333333333\" data-type=\"gif\" data-w=\"720\" style=\"vertical-align: middle;max-width: 100%;width: 100%;box-sizing: border-box;\"></section></section></section>\n"
     }
 
-    private static let weChatFooterBannerHTML = """
-    <p style="margin-left: 16px;margin-right: 16px;margin-bottom: 0px;"><span style="color: rgba(0, 0, 0, 0.9);font-size: 12px;font-weight: bold;font-family: mp-quote, &quot;PingFang SC&quot;, system-ui, -apple-system, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;line-height: 1.6;letter-spacing: 0.034em;">作者｜ifanr</span></p>
-    <p style="margin-left: 16px;margin-right: 16px;margin-bottom: 24px;"><span style="color: rgba(0, 0, 0, 0.9);font-size: 12px;font-weight: bold;font-family: mp-quote, &quot;PingFang SC&quot;, system-ui, -apple-system, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;line-height: 1.6;letter-spacing: 0.034em;">编辑｜ifanr</span></p>
+    private static let weChatFooterImagesHTML = """
     <section style="text-align: center;line-height: 0;box-sizing: border-box;"><section style="max-width: 100%;vertical-align: middle;display: inline-block;line-height: 0;box-sizing: border-box;" nodeleaf=""><img src="https://mmbiz.qpic.cn/sz_mmbiz_png/fc90sFPPBCO5sTlJseFUfia8Hu5P9EWwc4YHFvbFXrYWWDVxISzy2Vl3HGU4ibnqLPR6U8BgFRGxhS86OwDH6OCMnIDr4UnyEhYy6dTib2qiaBA/640?wx_fmt=png" class="rich_pages wxw-img" data-ratio="0.05804" data-s="300,640" data-w="1051" style="vertical-align:middle;max-width:100%;width:100%;box-sizing:border-box;" width="100%"></section></section>
     <p style="white-space: normal;margin: 0px;padding: 0px;box-sizing: border-box;"></p>
     <section style="text-align: left;justify-content: flex-start;display: flex;flex-flow: row;box-sizing: border-box;"><section style="display: inline-block;width: 100%;vertical-align: top;align-self: flex-start;flex: 0 0 auto;background-repeat: repeat;background-attachment: scroll;border-radius: 10px;overflow: hidden;background-image: url(&quot;https://mmbiz.qpic.cn/mmbiz_png/fc90sFPPBCMRTjiay36FKj1KwiaibBpEPbK583nGuBnJjNNeR13rq3IA6sia1fzibcJKicGLZcIfTOVU00ATFq7mmDMSKd18TqTmZzT7EmGykuQbk/640?wx_fmt=png&quot;);box-sizing: border-box;background-position: 0% 0% !important;background-size: auto !important;"><section style="justify-content: flex-start;display: flex;flex-flow: row;margin: 50px 0px 0px;box-sizing: border-box;"><section style="display: inline-block;width: 100%;vertical-align: top;align-self: flex-start;flex: 0 0 auto;box-sizing: border-box;"><section style="text-align: center;line-height: 0;box-sizing: border-box;"><section style="max-width: 100%;vertical-align: middle;display: inline-block;line-height: 0;box-sizing: border-box;" nodeleaf=""><img src="https://mmbiz.qpic.cn/sz_mmbiz_png/fc90sFPPBCP8MG80wljJC4cT2s8YibQ2t5hoaVEAoIZ8ftGmllAI5ehMD28ExTwBdfsibfyOqZBmTyjhrdXklbqcCa3CeMiaAXdeyzjKY11lIE/640?wx_fmt=png" class="rich_pages wxw-img" data-ratio="0.6003805899143673" data-s="300,640" data-w="1051" style="vertical-align: middle;max-width: 100%;width: 100%;box-sizing: border-box;"></section></section></section></section><section style="justify-content: flex-start;display: flex;flex-flow: row;box-sizing: border-box;"><section style="display: inline-block;width: 100%;vertical-align: top;align-self: flex-start;flex: 0 0 auto;box-sizing: border-box;"><section style="text-align: center;line-height: 0;box-sizing: border-box;"><section style="max-width: 100%;vertical-align: middle;display: inline-block;line-height: 0;box-sizing: border-box;"><a href="https://mp.weixin.qq.com/s?__biz=MjgzMTAwODI0MA==&amp;mid=2652396877&amp;idx=2&amp;sn=dfef25453a6bf0dca147b0adca3deaf7&amp;scene=21#wechat_redirect" target="_blank"><span style="width:100%" class="js_jump_icon h5_image_link"><img src="https://mmbiz.qpic.cn/sz_mmbiz_png/fc90sFPPBCPyDFWbJT8y9ibibmFbtvMJbwHxCAZQskte81K91q7QwkwXPevnDR7bvHUD9ntPN43bDibM6svwxrCkBaVruzvjKVBLnTwJYk5pOk/640?wx_fmt=png" class="rich_pages wxw-img" data-ratio="0.14367269267364416" data-s="300,640" data-w="1051" style="vertical-align: middle;max-width: 100%;width: 100%;box-sizing: border-box;"></span></a></section></section><section style="text-align: justify;box-sizing: border-box;"><p style="white-space: normal;margin: 0px;padding: 0px;box-sizing: border-box;"></p></section></section></section></section></section>
     <section style="text-align: center;line-height: 0;box-sizing: border-box;margin-top: 16px;"><section style="max-width: 100%;vertical-align: middle;display: inline-block;line-height: 0;border-radius: 10px;overflow: hidden;box-sizing: border-box;" nodeleaf=""><img src="https://mmbiz.qpic.cn/mmbiz_png/fc90sFPPBCNnChuCqY5TK78KORbHN3ficOaIgpjRfNqQWMJqRxxNGpMb2Om3ebIfpJGIs7nfu2WrCYzYjLkH6qicYms1ibfJbFujmoNFYaavpw/640?wx_fmt=png" class="rich_pages wxw-img" data-ratio="1.3333333333333333" data-s="300,640" data-w="1080" style="vertical-align: middle;max-width: 100%;width: 100%;box-sizing: border-box;"></section></section>
     """
 
+    private static let weChatFooterBannerHTML = """
+    <p style="margin-left: 16px;margin-right: 16px;margin-bottom: 0px;"><span style="color: rgba(0, 0, 0, 0.9);font-size: 12px;font-weight: bold;font-family: mp-quote, &quot;PingFang SC&quot;, system-ui, -apple-system, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;line-height: 1.6;letter-spacing: 0.034em;">作者｜ifanr</span></p>
+    <p style="margin-left: 16px;margin-right: 16px;margin-bottom: 24px;"><span style="color: rgba(0, 0, 0, 0.9);font-size: 12px;font-weight: bold;font-family: mp-quote, &quot;PingFang SC&quot;, system-ui, -apple-system, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;line-height: 1.6;letter-spacing: 0.034em;">编辑｜ifanr</span></p>
+    \(weChatFooterImagesHTML)
+    """
+
     private static func isCaptionText(_ text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("图") else { return false }
-        let afterTu = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-        guard let firstChar = afterTu.first else { return false }
-        return firstChar == "｜" || firstChar == "|" || firstChar == "：" || firstChar == ":"
+        if trimmed.hasPrefix("▲") || trimmed.hasPrefix("△") || trimmed.hasPrefix("▼") || trimmed.hasPrefix("▽") {
+            return true
+        }
+        if trimmed.hasPrefix("图") || trimmed.hasPrefix("注") {
+            let afterPrefix = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+            if let firstChar = afterPrefix.first {
+                return firstChar == "｜" || firstChar == "|" || firstChar == "：" || firstChar == ":"
+            }
+        }
+        return false
     }
 
     private static func normalizeCaptionText(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard isCaptionText(trimmed) else { return text }
-        let afterTu = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
-        let content = afterTu.dropFirst().trimmingCharacters(in: .whitespaces)
+        if trimmed.hasPrefix("▲") || trimmed.hasPrefix("△") || trimmed.hasPrefix("▼") || trimmed.hasPrefix("▽") {
+            return trimmed
+        }
+        let afterPrefix = trimmed.dropFirst().trimmingCharacters(in: .whitespaces)
+        let content = afterPrefix.dropFirst().trimmingCharacters(in: .whitespaces)
         return "图｜\(content)"
     }
 
@@ -419,33 +794,59 @@ enum EtherpadExporter {
         return false
     }
 
-    private static func extractImageURL(from line: String) -> String? {
+    private static func extractImageURLs(from line: String) -> [String] {
         let trimmed = line.trimmingCharacters(in: .whitespaces)
-        let mdPattern = "^!\\[[^\\]]*\\]\\(([^)]+)\\)$"
-        if let regex = try? NSRegularExpression(pattern: mdPattern, options: []),
-           let match = regex.firstMatch(in: trimmed, options: [], range: NSRange(location: 0, length: (trimmed as NSString).length)),
-           match.numberOfRanges > 1 {
-            return (trimmed as NSString).substring(with: match.range(at: 1))
+        var urls: [String] = []
+
+        // 1. Extract Markdown image URLs: ![alt](url)
+        let mdPattern = "!\\[[^\\]]*\\]\\(([^)]+)\\)"
+        if let regex = try? NSRegularExpression(pattern: mdPattern, options: []) {
+            let nsString = trimmed as NSString
+            let matches = regex.matches(in: trimmed, options: [], range: NSRange(location: 0, length: nsString.length))
+            for match in matches {
+                if match.numberOfRanges > 1 {
+                    urls.append(nsString.substring(with: match.range(at: 1)))
+                }
+            }
         }
-        if trimmed.lowercased().contains("<img"),
-           let src = firstAttribute("src", in: trimmed) {
-            return src
+
+        // 2. Extract HTML img src URLs: <img ... src="url" ...>
+        if trimmed.lowercased().contains("<img") {
+            let imgPattern = "<img[^>]+src=[\"']([^\"']+)[\"']"
+            if let regex = try? NSRegularExpression(pattern: imgPattern, options: [.caseInsensitive]) {
+                let nsString = trimmed as NSString
+                let matches = regex.matches(in: trimmed, options: [], range: NSRange(location: 0, length: nsString.length))
+                for match in matches {
+                    if match.numberOfRanges > 1 {
+                        let src = nsString.substring(with: match.range(at: 1))
+                        if !urls.contains(src) {
+                            urls.append(src)
+                        }
+                    }
+                }
+            }
         }
-        return nil
+
+        return urls
     }
 
-    private static func buildHorizontalSliderHTML(imageURLs: [String]) -> String {
+    private static func extractImageURL(from line: String) -> String? {
+        return extractImageURLs(from: line).first
+    }
+
+    private static func buildWeChatHorizontalSliderHTML(imageURLs: [String]) -> String {
         let count = imageURLs.count
         guard count > 0 else { return "" }
+        let totalWidthPercent = count * 100
         let itemWidthPercent = String(format: "%.4f", 100.0 / Double(count)) + "%"
         var itemsHTML = ""
         for url in imageURLs {
-            itemsHTML += "<section style=\"display: inline-block; width: \(itemWidthPercent); min-width: \(itemWidthPercent); max-width: \(itemWidthPercent);\"><img src=\"\(htmlEscaped(url))\" style=\"min-width: 100%; max-width: 100%; padding-right: 5px;\"></section>"
+            itemsHTML += "<section style=\"display: inline-block; width: \(itemWidthPercent); min-width: \(itemWidthPercent); max-width: \(itemWidthPercent); vertical-align: top; box-sizing: border-box;\"><img src=\"\(htmlEscaped(url))\" style=\"width: 100%; max-width: 100%; display: block; border-radius: 8px;\"></section>"
         }
         return """
         <section style="margin-bottom: 32px; padding: 0 14px; box-sizing: border-box; font-size: 0px;" data-type="custom-block">
         <section class="overflow-scrolling" style="min-width: 100%; max-width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch;">
-        <section style="min-width: \(count * 100)%; max-width: \(count * 100)%;">
+        <section style="min-width: \(totalWidthPercent)%; max-width: \(totalWidthPercent)%; white-space: nowrap;">
         \(itemsHTML)
         </section>
         </section>
@@ -455,7 +856,7 @@ enum EtherpadExporter {
         """
     }
 
-    private static func buildVerticalSliderHTML(imageURLs: [String]) -> String {
+    private static func buildWeChatVerticalSliderHTML(imageURLs: [String]) -> String {
         guard !imageURLs.isEmpty else { return "" }
         var imgsHTML = ""
         for url in imageURLs {
@@ -464,11 +865,68 @@ enum EtherpadExporter {
         return """
         <section style="margin: 26px 0; padding: 0 14px; box-sizing: border-box;" data-type="custom-block">
         <section style="width: 100%; height: 300px; overflow: hidden;">
-        <section style="display: flex; flex-direction: column; height: 100%; overflow-y: auto;">
+        <section style="display: flex; flex-direction: column; height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;">
         \(imgsHTML)</section>
         </section>
         <section style="margin: 6px 0px; font-size: 12px; line-height: 17px; color: rgb(167, 167, 167); text-align: center;">上下滑动查看更多内容</section>
         </section>
+        """
+    }
+
+    private static func buildWeChatCalloutCardHTML(lines: [String], imgRadius: String = "8px") -> String {
+        var innerSections = ""
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            let content = parseWeChatInline(trimmed, imgRadius: imgRadius)
+            innerSections += "<section style=\"margin-bottom: 16px;\"><span>\(content)</span></section>\n"
+        }
+        guard !innerSections.isEmpty else { return "" }
+        return """
+        <section style="margin-bottom: 46px; padding: 24px 15px 8px; font-size: 14px; line-height: 28px; background: rgb(248, 248, 248); color: rgb(105, 105, 105); border-radius: 12px; text-align: justify;" data-type="custom-block">
+        \(innerSections)</section>
+        """
+    }
+
+    private static func buildWordPressHorizontalSliderHTML(imageURLs: [String]) -> String {
+        let count = imageURLs.count
+        guard count > 0 else { return "" }
+        var itemsHTML = ""
+        for url in imageURLs {
+            itemsHTML += "<div style=\"display: inline-block; width: 85%; max-width: 85%; margin-right: 10px; vertical-align: top; white-space: normal;\"><img src=\"\(htmlEscaped(url))\" style=\"width: 100%; max-width: 100%; height: auto; border-radius: 8px; display: block;\"></div>"
+        }
+        return """
+        <div style="margin: 26px 0; padding: 0; width: 100%; overflow-x: auto; white-space: nowrap; -webkit-overflow-scrolling: touch; font-size: 0px;" data-type="custom-block">
+        \(itemsHTML)</div>
+        <p style="margin: 6px 0 20px 0; font-size: 12px; line-height: 17px; color: #a7a7a7; text-align: center;">向左滑动查看更多内容</p>
+        """
+    }
+
+    private static func buildWordPressVerticalSliderHTML(imageURLs: [String]) -> String {
+        guard !imageURLs.isEmpty else { return "" }
+        var imgsHTML = ""
+        for url in imageURLs {
+            imgsHTML += "<img src=\"\(htmlEscaped(url))\" style=\"display: block; width: 100%; max-width: 100%; margin: 0; padding: 0; border: none;\">\n"
+        }
+        return """
+        <div style="margin: 26px 0; width: 100%; height: 360px; max-height: 360px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; border-radius: 8px; box-sizing: border-box;" data-type="custom-block">
+        \(imgsHTML)</div>
+        <p style="margin: 6px 0 20px 0; font-size: 12px; line-height: 17px; color: #a7a7a7; text-align: center;">上下滑动查看更多内容</p>
+        """
+    }
+
+    private static func buildWordPressCalloutCardHTML(lines: [String]) -> String {
+        var innerParagraphs = ""
+        for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { continue }
+            let content = parseInline(trimmed)
+            innerParagraphs += "<p style=\"margin: 0 0 12px 0; padding: 0; line-height: 28px;\"><span>\(content)</span></p>\n"
+        }
+        guard !innerParagraphs.isEmpty else { return "" }
+        return """
+        <div style="margin: 26px 0; padding: 20px 18px 8px; font-size: 14px; line-height: 28px; background: #f8f8f8; color: #696969; border-radius: 12px; text-align: justify; box-sizing: border-box;" data-type="custom-block">
+        \(innerParagraphs)</div>
         """
     }
 
@@ -533,8 +991,9 @@ enum EtherpadExporter {
                         prevIdx -= 1
                         continue
                     }
-                    if let u = extractImageURL(from: lines[prevIdx]) {
-                        backURLs.insert(u, at: 0)
+                    let lineURLs = extractImageURLs(from: lines[prevIdx])
+                    if !lineURLs.isEmpty {
+                        backURLs.insert(contentsOf: lineURLs, at: 0)
                         startIdx = prevIdx
                         prevIdx -= 1
                     } else {
@@ -551,8 +1010,9 @@ enum EtherpadExporter {
                         nextIdx += 1
                         continue
                     }
-                    if let u = extractImageURL(from: lines[nextIdx]) {
-                        urls.append(u)
+                    let lineURLs = extractImageURLs(from: lines[nextIdx])
+                    if !lineURLs.isEmpty {
+                        urls.append(contentsOf: lineURLs)
                         endIdx = nextIdx
                         nextIdx += 1
                     } else {
@@ -581,9 +1041,9 @@ enum EtherpadExporter {
                 }
                 switch block.kind {
                 case .horizontal:
-                    result += buildHorizontalSliderHTML(imageURLs: block.urls) + "\n"
+                    result += buildWeChatHorizontalSliderHTML(imageURLs: block.urls) + "\n"
                 case .vertical:
-                    result += buildVerticalSliderHTML(imageURLs: block.urls) + "\n"
+                    result += buildWeChatVerticalSliderHTML(imageURLs: block.urls) + "\n"
                 }
                 index = block.endIndex + 1
                 continue
@@ -670,6 +1130,54 @@ enum EtherpadExporter {
                 continue
             }
 
+            // Callout / Highlight Blocks (<section data-type="callout"> or <callout>)
+            let lowerTrimmed = trimmed.lowercased()
+            if lowerTrimmed.hasPrefix("<section data-type=\"callout\"") || lowerTrimmed.hasPrefix("<callout") {
+                if inWeChatList {
+                    result += "</section>\n"
+                    inWeChatList = false
+                }
+                var calloutLines: [String] = []
+                let endTag = lowerTrimmed.hasPrefix("<callout") ? "</callout>" : "</section>"
+                var subIdx = index
+                var foundEnd = false
+
+                while subIdx < lines.count {
+                    let currentLine = lines[subIdx]
+                    let currentTrimmed = currentLine.trimmingCharacters(in: .whitespaces)
+                    let currentLower = currentTrimmed.lowercased()
+
+                    let cleaned = currentLine
+                        .replacingOccurrences(of: "<section data-type=\"callout\">", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "</section>", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "<callout>", with: "", options: .caseInsensitive)
+                        .replacingOccurrences(of: "</callout>", with: "", options: .caseInsensitive)
+                        .trimmingCharacters(in: .whitespaces)
+
+                    if !cleaned.isEmpty {
+                        calloutLines.append(cleaned)
+                    }
+
+                    if currentLower.contains(endTag) && subIdx > index {
+                        foundEnd = true
+                        subIdx += 1
+                        break
+                    }
+                    if currentLower.contains(endTag) && subIdx == index && (currentLower.components(separatedBy: endTag).count > 2 || !cleaned.isEmpty) {
+                        foundEnd = true
+                        subIdx += 1
+                        break
+                    }
+                    subIdx += 1
+                }
+
+                if !calloutLines.isEmpty {
+                    result += buildWeChatCalloutCardHTML(lines: calloutLines, imgRadius: imgRadius) + "\n"
+                    index = subIdx
+                    continue
+                }
+            }
+
             // HTML / Images
             if trimmed.hasPrefix("<") {
                 if trimmed.lowercased().contains("<img") {
@@ -684,7 +1192,7 @@ enum EtherpadExporter {
                 continue
             }
 
-            // Blockquotes
+            // Blockquotes (> ...)
             if trimmed.hasPrefix("> ") {
                 let content = parseWeChatInline(String(trimmed.dropFirst(2)), imgRadius: imgRadius)
                 let bqStyle = "padding: 0 15px; border-left: 4px solid #D8D8D8; padding-left: 14px; font-family: &quot;PingFangSC-Light&quot;, sans-serif; font-weight: 600; font-size: 15px; color: #222222; text-align: justify; line-height: 27px; margin: 26px 0;"
@@ -694,6 +1202,19 @@ enum EtherpadExporter {
             }
 
             if trimmed == ">" {
+                index += 1
+                continue
+            }
+
+            // Author / Editor lines
+            let isAuthor = trimmed.hasPrefix("作者｜") || trimmed.hasPrefix("作者|") || trimmed.hasPrefix("作者：") || trimmed.hasPrefix("作者:")
+            let isEditor = trimmed.hasPrefix("编辑｜") || trimmed.hasPrefix("编辑|") || trimmed.hasPrefix("编辑：") || trimmed.hasPrefix("编辑:")
+            if isAuthor || isEditor {
+                let content = parseWeChatInline(trimmed, imgRadius: imgRadius)
+                let marginBottom = isAuthor ? "0px" : "24px"
+                let authorStyle = "margin-left: 16px;margin-right: 16px;margin-bottom: \(marginBottom);"
+                let spanStyle = "color: rgba(0, 0, 0, 0.9);font-size: 12px;font-weight: bold;font-family: mp-quote, &quot;PingFang SC&quot;, system-ui, -apple-system, BlinkMacSystemFont, &quot;Helvetica Neue&quot;, &quot;Hiragino Sans GB&quot;, &quot;Microsoft YaHei UI&quot;, &quot;Microsoft YaHei&quot;, Arial, sans-serif;line-height: 1.6;letter-spacing: 0.034em;"
+                result += "<p style=\"\(authorStyle)\"><span style=\"\(spanStyle)\">\(content)</span></p>\n"
                 index += 1
                 continue
             }
@@ -710,7 +1231,15 @@ enum EtherpadExporter {
         }
 
         if addFooterBanner {
-            result += weChatFooterBannerHTML + "\n"
+            let hasFooterImg = markdown.contains("fc90sFPPBCNnChuCqY5TK78KORbHN3ficOaIgpjRfNqQWMJqRxxNG")
+            if !hasFooterImg {
+                let hasAuthorOrEditor = markdown.contains("作者｜") || markdown.contains("作者|") || markdown.contains("作者：") || markdown.contains("作者:") || markdown.contains("编辑｜") || markdown.contains("编辑|") || markdown.contains("编辑：") || markdown.contains("编辑:")
+                if hasAuthorOrEditor {
+                    result += weChatFooterImagesHTML + "\n"
+                } else {
+                    result += weChatFooterBannerHTML + "\n"
+                }
+            }
         }
 
         return result

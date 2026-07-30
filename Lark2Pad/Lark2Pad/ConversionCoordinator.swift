@@ -244,7 +244,7 @@ final class ConversionCoordinator: ObservableObject {
     ) async {
         // Clean markdown backslash escapes (e.g. B\&O -> B&O, Type\-C -> Type-C) before conversion
         let cleanedContent = EtherpadExporter.normalizeMarkdownSpacing(
-            ManagedMarkItDownRuntime.stripMarkdownEscapes(content)
+            Self.stripMarkdownEscapes(content)
         )
         
         statusMessage = "正在解析 Markdown 结构…"
@@ -309,6 +309,13 @@ final class ConversionCoordinator: ObservableObject {
         markdownResult = normalizedMarkdown
         previewHTML = EtherpadExporter.buildRenderedHTML(from: normalizedMarkdown)
         etherpadHTML = EtherpadExporter.buildRawHTML(from: normalizedMarkdown)
+
+        Lark2PadHistoryManager.shared.saveItem(
+            title: "",
+            markdown: normalizedMarkdown,
+            wechatHTML: previewHTML,
+            wordpressHTML: EtherpadExporter.buildWordPressHTML(from: normalizedMarkdown)
+        )
 
         statusMessage = "正在渲染预览…"
         phase = .rendering
@@ -412,5 +419,11 @@ final class ConversionCoordinator: ObservableObject {
             n = n / 26 - 1
         } while n >= 0
         return res
+    }
+
+    private static func stripMarkdownEscapes(_ text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"\\([^a-zA-Z0-9\s])"#) else { return text }
+        let range = NSRange(text.startIndex..<text.endIndex, in: text)
+        return regex.stringByReplacingMatches(in: text, range: range, withTemplate: "$1")
     }
 }

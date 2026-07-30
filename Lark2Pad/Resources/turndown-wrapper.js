@@ -39,6 +39,23 @@ function initTurndown() {
         }
     });
 
+    // 针对飞书/Lark 高亮块 (Callout) 的定制规则
+    turndownService.addRule('feishuCallout', {
+        filter: function (node) {
+            if (!node) return false;
+            const tagName = node.tagName ? node.tagName.toLowerCase() : '';
+            if (tagName === 'callout') return true;
+            const className = (node.className || '').toString().toLowerCase();
+            const dataType = (node.getAttribute('data-type') || node.getAttribute('data-block-type') || '').toLowerCase();
+            if (className.includes('callout') || dataType === 'callout' || dataType === 'highlight') return true;
+            return false;
+        },
+        replacement: function (content, node) {
+            const cleanContent = content.trim();
+            return '\n\n<section data-type="callout">\n' + cleanContent + '\n</section>\n\n';
+        }
+    });
+
     // 针对列表项的定制规则，强制紧凑列表（移除多余空行）
     turndownService.addRule('listItems', {
         filter: 'li',
@@ -75,6 +92,81 @@ function loadHtmlAndGetImages(htmlStr) {
         const text = node.textContent.replace(/[\s\u200B-\u200D\uFEFF]/g, '');
         if (text === '' && !node.querySelector('img, video, iframe')) {
             node.remove();
+        }
+    });
+
+    // 扩展飞书云文档多图画廊组件 (仅在 DOM 中的 img 数量少于 JSON 列表时补全缺失项)
+    const galleries = window.activeDoc.querySelectorAll('[data-ace-gallery-json], [data-gallery-json]');
+    galleries.forEach(gallery => {
+        const jsonStr = gallery.getAttribute('data-ace-gallery-json') || gallery.getAttribute('data-gallery-json');
+        if (!jsonStr) return;
+        try {
+            const data = JSON.parse(jsonStr);
+            const items = data.items || data.file_list || [];
+            if (Array.isArray(items) && items.length > 0) {
+                const existingImgs = Array.from(gallery.querySelectorAll('img'));
+                if (existingImgs.length < items.length) {
+                    const existingSrcs = existingImgs.map(i => i.getAttribute('src') || '');
+                    const firstImg = existingImgs[0];
+                    const firstSrc = firstImg ? (firstImg.getAttribute('src') || '') : '';
+                    const firstToken = items[0] ? items[0].file_token : null;
+
+                    items.forEach((item) => {
+                        const token = item.file_token || '';
+                        const alreadyPresent = existingSrcs.some(src => (token && src.includes(token)) || (item.src && src.includes(decodeURIComponent(item.src))));
+                        if (alreadyPresent) return;
+
+                        let newSrc = '';
+                        if (item.file_token && firstToken && firstSrc) {
+                            newSrc = firstSrc.replace(firstToken, item.file_token);
+                        }
+                        if (!newSrc && item.src) {
+                            newSrc = decodeURIComponent(item.src);
+                        }
+                        if (!newSrc && item.file_token) {
+                            newSrc = 'https://internal-api-drive-stream.feishu.cn/space/api/box/stream/download/preview/' + item.file_token + '/?preview_type=16';
+                        }
+
+                        if (newSrc) {
+                            const newImg = window.activeDoc.createElement('img');
+                            newImg.setAttribute('src', newSrc);
+                            gallery.appendChild(newImg);
+                        }
+                    });
+                }
+            }
+        } catch (e) {
+            console.error('Failed to parse Feishu gallery JSON', e);
+        }
+    });
+
+    // 过滤与防重：去除隐藏/无效 img 标签及紧邻的重复 src
+    const rawImages = Array.from(window.activeDoc.querySelectorAll('img'));
+    let seenSrcs = new Set();
+    rawImages.forEach(img => {
+        const style = (img.getAttribute('style') || '').toLowerCase();
+        if (style.includes('display: none') || style.includes('display:none') || style.includes('visibility: hidden') || style.includes('visibility:hidden')) {
+            img.remove();
+            return;
+        }
+        let src = img.getAttribute('src') || '';
+        if (!src || src.startsWith('data:image/svg+xml')) {
+            return;
+        }
+        let cleanSrc = src.split('?')[0];
+
+        // 检查非滑动卡片容器内紧邻的完全相同 src 图片重复
+        let isInsideSlider = img.closest('[class*="slider"], [data-type*="slider"], [class*="gallery"]');
+        if (!isInsideSlider) {
+            let prev = img.previousElementSibling;
+            if (prev && prev.tagName && prev.tagName.toLowerCase() === 'img') {
+                let prevSrc = (prev.getAttribute('src') || '').split('?')[0];
+                if (prevSrc === cleanSrc) {
+                    img.remove();
+                    return;
+                }
+            }
+            seenSrcs.add(cleanSrc);
         }
     });
 
